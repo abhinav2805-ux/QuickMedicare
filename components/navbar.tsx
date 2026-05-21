@@ -2,27 +2,111 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useState, useEffect } from 'react'
-import { Menu, X, Phone } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { Camera, LogOut, Menu, Mail, User, X, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 
 export default function Navbar() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userData, setUserData] = useState({ name: 'User', email: '', userId: '' })
+  const [avatarSrc, setAvatarSrc] = useState('')
+  const [profileOpen, setProfileOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    // Check if user is authenticated by checking for token in localStorage
-    const token = localStorage.getItem('authToken')
-    setIsAuthenticated(!!token)
+    const loadProfile = async () => {
+      try {
+        const response = await fetch('/api/auth/verify')
+        if (!response.ok) {
+          setIsAuthenticated(false)
+          return
+        }
+
+        const data = await response.json()
+        if (data.success && data.data) {
+          const profile = {
+            name: data.data.name || 'User',
+            email: data.data.email || '',
+            userId: data.data.userId || '',
+          }
+
+          setUserData(profile)
+          setIsAuthenticated(true)
+
+          const storageKey = `avatar:${profile.email || profile.userId}`
+          const savedAvatar = localStorage.getItem(storageKey)
+          if (savedAvatar) {
+            setAvatarSrc(savedAvatar)
+          }
+        } else {
+          setIsAuthenticated(false)
+        }
+      } catch (error) {
+        console.error('[v0] Navbar auth error:', error)
+        setIsAuthenticated(false)
+      }
+    }
+
+    loadProfile()
   }, [])
 
   const toggleMenu = () => setIsOpen(!isOpen)
 
-  const handleLogout = () => {
-    localStorage.removeItem('authToken')
-    setIsAuthenticated(false)
-    window.location.href = '/'
+  const avatarStorageKey = `avatar:${userData.email || userData.userId}`
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch (error) {
+      console.error('[v0] Logout error:', error)
+    } finally {
+      localStorage.removeItem('authToken')
+      setIsAuthenticated(false)
+      setProfileOpen(false)
+      router.push('/')
+    }
   }
+
+  const handleAvatarPick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result === 'string') {
+        setAvatarSrc(result)
+        localStorage.setItem(avatarStorageKey, result)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const userInitials = userData.name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || 'U'
 
   return (
     <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-border">
@@ -67,9 +151,69 @@ export default function Navbar() {
                 <Link href="/dashboard">
                   <Button variant="outline">Dashboard</Button>
                 </Link>
-                <Button onClick={handleLogout} variant="outline" className="text-destructive">
-                  Logout
-                </Button>
+                <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+                  <DialogTrigger asChild>
+                    <button className="flex items-center gap-2 rounded-full border border-border bg-background px-2 py-1.5 pr-3 text-sm text-foreground transition hover:bg-muted">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={avatarSrc} alt={userData.name} />
+                        <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
+                      </Avatar>
+                      <span className="max-w-[120px] truncate">{userData.name}</span>
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="left-auto right-4 top-1/2 h-[60vh] w-full max-w-[22rem] -translate-y-1/2 translate-x-0 rounded-2xl border-border bg-white p-6 shadow-2xl overflow-y-auto sm:max-w-[22rem]">
+                    <DialogHeader>
+                      <DialogTitle>Profile</DialogTitle>
+                      <DialogDescription>
+                        View your account details, change your avatar, or log out.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 p-4">
+                        <Avatar className="h-16 w-16">
+                          <AvatarImage src={avatarSrc} alt={userData.name} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-lg">{userInitials}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-lg font-semibold text-foreground truncate">{userData.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">{userData.email || 'No email available'}</p>
+                        </div>
+                      </div>
+
+                      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+
+                      <div className="grid gap-3">
+                        <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Name</p>
+                            <p className="text-sm text-foreground">{userData.name}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3">
+                          <Mail className="h-4 w-4 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Email</p>
+                            <p className="truncate text-sm text-foreground">{userData.email || 'No email available'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <Button onClick={handleAvatarPick} variant="outline" className="flex-1">
+                          <Camera className="mr-2 h-4 w-4" />
+                          Change Avatar
+                        </Button>
+                        <Button onClick={handleLogout} variant="outline" className="flex-1 text-destructive hover:bg-destructive/10">
+                          <LogOut className="mr-2 h-4 w-4" />
+                          Logout
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </>
             ) : (
               <>
@@ -119,8 +263,12 @@ export default function Navbar() {
                       Dashboard
                     </Button>
                   </Link>
-                  <Button onClick={handleLogout} variant="outline" className="w-full text-destructive">
-                    Logout
+                  <Button onClick={() => setProfileOpen(true)} variant="outline" className="w-full justify-start gap-3">
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={avatarSrc} alt={userData.name} />
+                      <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{userData.name}</span>
                   </Button>
                 </>
               ) : (
@@ -139,6 +287,7 @@ export default function Navbar() {
           </div>
         )}
       </div>
+
     </nav>
   )
 }
