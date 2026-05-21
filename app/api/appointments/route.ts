@@ -3,20 +3,29 @@ import { ObjectId } from 'mongodb'
 import { getToken } from 'next-auth/jwt'
 import { connectToDatabase } from '@/lib/mongodb'
 import { decodeToken } from '@/lib/jwt'
+import { sendAppointmentConfirmation } from '@/lib/email'
 import { ApiResponse, Appointment } from '@/lib/models'
 
-async function getAuthenticatedUserId(req: NextRequest): Promise<string | null> {
+async function getAuthenticatedUser(req: NextRequest): Promise<{ userId: string; email: string; name: string } | null> {
   const token = req.cookies.get('authToken')?.value
   if (token) {
     const decoded = decodeToken(token)
     if (decoded?.userId) {
-      return decoded.userId
+      return {
+        userId: decoded.userId,
+        email: decoded.email,
+        name: decoded.name,
+      }
     }
   }
 
   const nextAuthToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
-  if (nextAuthToken?.sub) {
-    return nextAuthToken.sub
+  if (nextAuthToken?.sub && nextAuthToken?.email) {
+    return {
+      userId: nextAuthToken.sub,
+      email: nextAuthToken.email,
+      name: nextAuthToken.name || 'User',
+    }
   }
 
   return null
@@ -24,8 +33,8 @@ async function getAuthenticatedUserId(req: NextRequest): Promise<string | null> 
 
 export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse>> {
   try {
-    const userId = await getAuthenticatedUserId(req)
-    if (!userId) {
+    const user = await getAuthenticatedUser(req)
+    if (!user) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
         { status: 401 }
@@ -36,7 +45,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse>> 
     const appointmentsCollection = db.collection('appointments')
 
     const appointments = await appointmentsCollection
-      .find({ userId: new ObjectId(userId) })
+      .find({ userId: new ObjectId(user.userId) })
       .sort({ appointmentDate: -1 })
       .toArray()
 
@@ -59,8 +68,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse>> 
 
 export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>> {
   try {
-    const userId = await getAuthenticatedUserId(req)
-    if (!userId) {
+    const user = await getAuthenticatedUser(req)
+    if (!user) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
         { status: 401 }
@@ -81,7 +90,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     const appointmentsCollection = db.collection('appointments')
 
     const newAppointment: Appointment = {
-      userId: new ObjectId(userId),
+      userId: new ObjectId(user.userId),
       doctorName,
       specialization,
       appointmentDate,
@@ -94,6 +103,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
 
     const result = await appointmentsCollection.insertOne(newAppointment)
+
+    await sendAppointmentConfirmation(user.email, user.name, {
+      doctorName,
+      specialization,
+      appointmentDate,
+      appointmentTime,
+    }).catch(error => {
+      console.error('[v0] Appointment confirmation email error:', error)
+    })
 
     return NextResponse.json(
       {

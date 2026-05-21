@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Calendar, LogOut, Plus, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { Calendar, Plus, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import Navbar from '@/components/navbar'
@@ -61,16 +61,6 @@ export default function Dashboard() {
 
     checkAuth()
   }, [router])
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      localStorage.removeItem('authToken')
-      router.push('/')
-    } catch (error) {
-      console.error('[v0] Logout error:', error)
-    }
-  }
 
   if (loading) {
     return (
@@ -132,10 +122,12 @@ export default function Dashboard() {
               <h1 className="text-4xl font-bold text-foreground">Dashboard</h1>
               <p className="text-muted-foreground mt-2">Welcome back, {userData.name}!</p>
             </div>
-            <Button onClick={handleLogout} variant="outline" className="text-destructive">
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
+            <Link href="/appointment">
+              <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-white">
+                <Plus className="w-4 h-4 mr-2" />
+                Add New Appointment
+              </Button>
+            </Link>
           </motion.div>
 
           {/* Quick Stats */}
