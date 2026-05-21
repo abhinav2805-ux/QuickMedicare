@@ -27,6 +27,12 @@ export default function BookAppointment() {
     reason: '',
     notes: '',
   })
+  const canSubmit =
+    formData.doctorName.trim() &&
+    formData.specialization.trim() &&
+    formData.appointmentDate.trim() &&
+    formData.appointmentTime.trim() &&
+    formData.reason.trim()
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -182,7 +188,7 @@ export default function BookAppointment() {
                       <SelectTrigger className="bg-input border-border">
                         <SelectValue placeholder="Select specialization" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-white z-50 shadow-md">
                         <SelectItem value="Cardiology">Cardiology</SelectItem>
                         <SelectItem value="General Medicine">General Medicine</SelectItem>
                         <SelectItem value="Emergency Medicine">Emergency Medicine</SelectItem>
@@ -270,8 +276,8 @@ export default function BookAppointment() {
                   </Link>
                   <Button
                     type="submit"
-                    disabled={submitting}
-                    className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                    disabled={submitting || !canSubmit}
+                    className="flex-1 border border-[#0969a2] bg-[#0969a2] text-white hover:bg-[#075a8c] hover:text-white disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
                   >
                     {submitting ? (
                       <>

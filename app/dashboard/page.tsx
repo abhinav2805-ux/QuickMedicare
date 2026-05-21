@@ -123,7 +123,7 @@ export default function Dashboard() {
               <p className="text-muted-foreground mt-2">Welcome back, {userData.name}!</p>
             </div>
             <Link href="/appointment">
-              <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-white">
+              <Button variant="outline" className="border-primary text-blue-800 hover:bg-primary hover:text-blue-300  ">
                 <Plus className="w-4 h-4 mr-2" />
                 Add New Appointment
               </Button>
