@@ -53,7 +53,10 @@ export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse>> 
       {
         success: true,
         message: 'Appointments fetched successfully',
-        data: appointments,
+        data: appointments.map(appointment => ({
+          ...appointment,
+          _id: appointment._id.toString(),
+        })),
       },
       { status: 200 }
     )
@@ -118,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
         success: true,
         message: 'Appointment booked successfully',
         data: {
-          _id: result.insertedId,
+          _id: result.insertedId.toString(),
           ...newAppointment,
         },
       },

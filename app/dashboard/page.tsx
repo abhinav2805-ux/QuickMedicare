@@ -7,6 +7,16 @@ import { motion } from 'framer-motion'
 import { Calendar, Plus, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import Navbar from '@/components/navbar'
 import Footer from '@/components/footer'
 
@@ -17,21 +27,64 @@ interface Appointment {
   appointmentDate: string
   appointmentTime: string
   reason: string
+  notes?: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   createdAt: string
+  updatedAt?: string
 }
 
 export default function Dashboard() {
   const router = useRouter()
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
+  const [dashboardError, setDashboardError] = useState('')
   const [userData, setUserData] = useState({ name: 'User', email: '' })
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false)
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
+  const [formError, setFormError] = useState('')
+  const [appointmentForm, setAppointmentForm] = useState({
+    doctorName: '',
+    specialization: '',
+    appointmentDate: '',
+    appointmentTime: '',
+    reason: '',
+    notes: '',
+  })
 
   useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchWithRetry = async (url: string, attempts = 2) => {
+      let lastError: unknown
+
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          return await fetch(url, {
+            credentials: 'include',
+            cache: 'no-store',
+            signal: controller.signal,
+          })
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw error
+          }
+
+          lastError = error
+          if (attempt < attempts) {
+            await new Promise(resolve => setTimeout(resolve, 250))
+          }
+        }
+      }
+
+      throw lastError
+    }
+
     const checkAuth = async () => {
       try {
+        setDashboardError('')
         // Check if user is authenticated
-        const response = await fetch('/api/auth/verify')
+        const response = await fetchWithRetry('/api/auth/verify')
         if (!response.ok) {
           router.push('/auth/login')
           return
@@ -46,21 +99,144 @@ export default function Dashboard() {
         }
 
         // Fetch appointments
-        const appointmentsRes = await fetch('/api/appointments')
+        const appointmentsRes = await fetchWithRetry('/api/appointments')
         const appointmentsData = await appointmentsRes.json()
         if (appointmentsData.success) {
-          setAppointments(appointmentsData.data || [])
+          setAppointments(
+            (appointmentsData.data || []).map((appointment: Appointment) => ({
+              ...appointment,
+              _id: String(appointment._id),
+            }))
+          )
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+
         console.error('[v0] Dashboard error:', error)
-        router.push('/auth/login')
+        setDashboardError('Unable to load dashboard data. Please refresh the page.')
       } finally {
         setLoading(false)
       }
     }
 
     checkAuth()
+
+    return () => {
+      controller.abort()
+    }
   }, [router])
+
+  const specializationOptions = [
+    'Cardiology',
+    'General Medicine',
+    'Emergency Medicine',
+    'Orthopedics',
+    'Pediatrics',
+    'Neurology',
+    'Psychiatry',
+    'Dermatology',
+  ]
+
+  const openRescheduleDialog = (appointment: Appointment) => {
+    setSelectedAppointment(appointment)
+    setAppointmentForm({
+      doctorName: appointment.doctorName,
+      specialization: appointment.specialization,
+      appointmentDate: appointment.appointmentDate,
+      appointmentTime: appointment.appointmentTime,
+      reason: appointment.reason,
+      notes: appointment.notes || '',
+    })
+    setFormError('')
+    setIsRescheduleOpen(true)
+  }
+
+  const handleAppointmentFormChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target
+    setAppointmentForm(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleAppointmentSelectChange = (name: string, value: string) => {
+    setAppointmentForm(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!selectedAppointment) {
+      return
+    }
+
+    setFormError('')
+    setActionLoadingId(selectedAppointment._id)
+
+    try {
+      const response = await fetch(`/api/appointments/${selectedAppointment._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appointmentForm),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setFormError(data.error || data.message || 'Failed to update appointment')
+        return
+      }
+
+      setAppointments(prev =>
+        prev.map(appointment =>
+          appointment._id === selectedAppointment._id
+            ? { ...appointment, ...appointmentForm }
+            : appointment
+        )
+      )
+      setIsRescheduleOpen(false)
+      setSelectedAppointment(null)
+    } catch (error) {
+      console.error('[v0] Reschedule error:', error)
+      setFormError('An error occurred while updating the appointment.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleCancelAppointment = async (appointmentId: string) => {
+    const confirmed = window.confirm('Cancel this appointment?')
+    if (!confirmed) {
+      return
+    }
+
+    setActionLoadingId(appointmentId)
+
+    try {
+      const response = await fetch(`/api/appointments/${appointmentId}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.error || data.message || 'Failed to cancel appointment')
+        return
+      }
+
+      setAppointments(prev => prev.filter(appointment => appointment._id !== appointmentId))
+      if (selectedAppointment?._id === appointmentId) {
+        setIsRescheduleOpen(false)
+        setSelectedAppointment(null)
+      }
+    } catch (error) {
+      console.error('[v0] Cancel appointment error:', error)
+      alert('An error occurred while cancelling the appointment.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -111,6 +287,12 @@ export default function Dashboard() {
 
       <div className="flex-1 px-4 sm:px-6 lg:px-8 py-12">
         <div className="max-w-7xl mx-auto">
+          {dashboardError && (
+            <Card className="mb-6 border-red-200 bg-red-50 p-4 text-red-700">
+              <p>{dashboardError}</p>
+            </Card>
+          )}
+
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -253,10 +435,19 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div className="flex gap-2 w-full md:w-auto">
-                          <Button variant="outline" className="flex-1 md:flex-none border-border">
+                          <Button
+                            variant="outline"
+                            className="flex-1 md:flex-none border-border"
+                            onClick={() => openRescheduleDialog(appointment)}
+                          >
                             Reschedule
                           </Button>
-                          <Button variant="outline" className="flex-1 md:flex-none border-border text-destructive">
+                          <Button
+                            variant="outline"
+                            className="flex-1 md:flex-none border-border text-destructive"
+                            onClick={() => handleCancelAppointment(appointment._id)}
+                            disabled={actionLoadingId === appointment._id}
+                          >
                             Cancel
                           </Button>
                         </div>
@@ -267,6 +458,122 @@ export default function Dashboard() {
               </div>
             )}
           </motion.div>
+
+          <Dialog
+            open={isRescheduleOpen}
+            onOpenChange={(open) => {
+              setIsRescheduleOpen(open)
+              if (!open) {
+                setSelectedAppointment(null)
+                setFormError('')
+              }
+            }}
+          >
+            <DialogContent className="bg-white sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Reschedule Appointment</DialogTitle>
+                <DialogDescription>
+                  Update date and time or change any other details if needed.
+                </DialogDescription>
+              </DialogHeader>
+
+              {formError && (
+                <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {formError}
+                </div>
+              )}
+
+              <form onSubmit={handleRescheduleSubmit} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Doctor Name</label>
+                    <Input
+                      name="doctorName"
+                      value={appointmentForm.doctorName}
+                      onChange={handleAppointmentFormChange}
+                      className="bg-input border-border"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Specialization</label>
+                    <Select
+                      value={appointmentForm.specialization}
+                      onValueChange={(value) => handleAppointmentSelectChange('specialization', value)}
+                    >
+                      <SelectTrigger className="w-full bg-input border-border">
+                        <SelectValue placeholder="Select specialization" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background z-50 shadow-md">
+                        {specializationOptions.map(option => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Appointment Date *</label>
+                    <Input
+                      type="date"
+                      name="appointmentDate"
+                      value={appointmentForm.appointmentDate}
+                      onChange={handleAppointmentFormChange}
+                      className="bg-input border-border"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Appointment Time *</label>
+                    <Input
+                      type="time"
+                      name="appointmentTime"
+                      value={appointmentForm.appointmentTime}
+                      onChange={handleAppointmentFormChange}
+                      className="bg-input border-border"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">Reason for Visit</label>
+                  <Input
+                    name="reason"
+                    value={appointmentForm.reason}
+                    onChange={handleAppointmentFormChange}
+                    className="bg-input border-border"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">Additional Notes</label>
+                  <Textarea
+                    name="notes"
+                    value={appointmentForm.notes}
+                    onChange={handleAppointmentFormChange}
+                    className="bg-input border-border min-h-28"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setIsRescheduleOpen(false)} className="w-full">
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="w-full bg-primary text-black border-1 hover:bg-primary/90"
+                    disabled={actionLoadingId === selectedAppointment?._id}
+                  >
+                    {actionLoadingId === selectedAppointment?._id ? 'Updating...' : 'Save Changes'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

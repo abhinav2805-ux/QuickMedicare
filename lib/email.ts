@@ -72,6 +72,64 @@ export async function sendAppointmentConfirmation(
   }
 }
 
+export async function sendAppointmentCancellation(
+  email: string,
+  name: string,
+  appointmentDetails: {
+    doctorName: string
+    specialization: string
+    appointmentDate: string
+    appointmentTime: string
+    reason?: string
+  }
+) {
+  const mailOptions = {
+    from: process.env.NODEMAILER_EMAIL,
+    to: email,
+    subject: 'Appointment Cancelled - QuickMedicare Solutions',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+        <div style="background-color: #c41c3b; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0; font-size: 28px;">Appointment Cancelled</h2>
+        </div>
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px;">
+          <p>Hi ${name},</p>
+          <p>Your appointment has been successfully cancelled.</p>
+
+          <div style="background-color: #f3f4f6; padding: 20px; border-left: 4px solid #c41c3b; margin: 20px 0; border-radius: 4px;">
+            <h3 style="margin-top: 0; color: #c41c3b;">Cancelled Appointment Details</h3>
+            <p><strong>Doctor:</strong> Dr. ${appointmentDetails.doctorName}</p>
+            <p><strong>Specialization:</strong> ${appointmentDetails.specialization}</p>
+            <p><strong>Date:</strong> ${appointmentDetails.appointmentDate}</p>
+            <p><strong>Time:</strong> ${appointmentDetails.appointmentTime}</p>
+            ${appointmentDetails.reason ? `<p><strong>Reason:</strong> ${appointmentDetails.reason}</p>` : ''}
+          </div>
+
+          <p style="margin-top: 30px; color: #666; font-size: 14px;">
+            If this cancellation was not intended, please book a new appointment from your dashboard.
+          </p>
+
+          <div style="background-color: #fff1f2; padding: 15px; border-radius: 4px; margin-top: 20px;">
+            <p style="margin: 0; color: #9f1239;"><strong>Need help?</strong></p>
+            <p style="margin: 5px 0 0 0; color: #9f1239; font-size: 14px;">Contact us: info@quickmedicare.com | +1 (800) 123-4567</p>
+          </div>
+
+          <p style="margin-top: 30px; color: #999; font-size: 12px;">
+            © 2026 QuickMedicare Solutions. All rights reserved.
+          </p>
+        </div>
+      </div>
+    `,
+  }
+
+  try {
+    await transporter.sendMail(mailOptions)
+    console.log('[v0] Cancellation email sent to:', email)
+  } catch (error) {
+    console.error('[v0] Cancellation email error:', error)
+  }
+}
+
 export async function sendWelcomeEmail(email: string, name: string) {
   const mailOptions = {
     from: process.env.NODEMAILER_EMAIL,
